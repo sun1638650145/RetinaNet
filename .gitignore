@@ -1,0 +1,5 @@
+.DS_store
+.idea/
+# 忽略运行缓存.
+*.pyc
+__pycache__/
