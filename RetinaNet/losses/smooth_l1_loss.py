@@ -8,7 +8,6 @@ class SmoothL1Loss(Loss):
 
     Attributes:
         delta: float, default=1.0, 平滑因子.
-        name: (可选) str, default='SmoothL1Loss', 自定义损失函数名称.
     """
     def __init__(self, delta=1.0, name='SmoothL1Loss'):
         """初始化带平滑的L1损失函数.

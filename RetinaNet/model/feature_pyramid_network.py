@@ -5,7 +5,7 @@ from tensorflow.keras.models import Model
 
 
 def get_backbone():
-    """获取ResNet50的骨架网络."""
+    """获取ResNet50的骨架网络, 返回ResNet50提取的特征信息."""
     backbone = ResNet50(include_top=False, input_shape=[None, None, 3])
     c3_output, c4_output, c5_output = [
         backbone.get_layer(layer_name).output
@@ -16,8 +16,13 @@ def get_backbone():
 
 
 class FeaturePyramidNetwork(layers.Layer):
-    """特征金字塔网络."""
+    """特征金字塔网络(基于ResNet50实现).
+
+    Reference:
+        - [Lin, T. Y. , et al., 2017](https://arxiv.org/abs/1612.03144v2)
+    """
     def __init__(self):
+        """初始化特征金字塔网络."""
         super(FeaturePyramidNetwork, self).__init__(name='FeaturePyramidNetwork')
 
         self.backbone = get_backbone()
@@ -36,6 +41,17 @@ class FeaturePyramidNetwork(layers.Layer):
         self.upsample_2x = layers.UpSampling2D(size=2)
 
     def call(self, inputs, training=False, **kwargs):
+        """实例化特征金字塔网络.
+
+        Args:
+            inputs: tf.Tensor,
+                输入网络层.
+            training: bool, default=False,
+                网络是否可训练.
+
+        Returns:
+            特征金字塔的五个尺度输出.
+        """
         C3, C4, C5 = self.backbone(inputs, training=training)
 
         P5 = self.conv_c5_1x1(C5)

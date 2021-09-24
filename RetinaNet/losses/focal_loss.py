@@ -11,7 +11,6 @@ class FocalLoss(Loss):
             权重因子, 用以解决类别不平衡.
         gamma: float, default=2.0,
             交叉熵的调制因子.
-        name: (可选) str, default='FocalLoss', 自定义损失函数名称.
 
     References:
         - [Lin, T. Y. , et al., 2017](https://arxiv.org/abs/1708.02002v2)

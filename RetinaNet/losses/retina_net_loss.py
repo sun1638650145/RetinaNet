@@ -12,11 +12,10 @@ class RetinaNetLoss(Loss):
     Attributes:
         num_classes: int, default=80,
             训练数据目标类别总数.
-        alpha: float, default=0.75,
-            权重因子, 用以解决类别不平衡.
-        gamma: float, default=2.0,
-            交叉熵的调制因子.
-        name: (可选) str, default='RetinaNetLoss', 自定义损失函数名称.
+        clf_loss: tf.keras.loss instance,
+            分类损失函数实例(FocalLoss).
+        box_loss: tf.keras.loss instance
+            框回归损失函数实例(SmoothL1Loss).
 
     References:
         - [Lin, T. Y. , et al., 2017](https://arxiv.org/abs/1708.02002v2)
