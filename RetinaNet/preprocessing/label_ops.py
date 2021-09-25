@@ -178,14 +178,30 @@ class AnchorBox(object):
 
 
 class LabelEncoder(object):
-    """标签编码器."""
+    """标签编码器.
+
+    Attributes:
+        anchor_box: RetinaNet.preprocessing.label_ops.AnchorBox,
+            锚框.
+        box_variance: tf.Tensor,
+            框方差, 用来增大损失(小于1), 便于计算梯度.
+    """
     def __init__(self):
+        """初始化标签编码器."""
         self.anchor_box = AnchorBox()
-        # 框方差用来增大损失(小于1), 便于计算梯度.
         self.box_variance = tf.convert_to_tensor([0.1, 0.1, 0.2, 0.2], dtype=tf.float32)
 
     def encode_batch(self, batch_images, gt_bboxes, label_ids):
-        """编码每个batch的标签(包括分类框和回归框)."""
+        """编码每个批次的标签(包括分类框和回归框).
+
+        Args:
+            batch_images: tf.Tensor, 一个批次的图像.
+            gt_bboxes: tf.Tensor, 该批次图像对应的真实边界框.
+            label_ids: tf.Tensor, 一个批次的图像对应的原始标签.
+
+        Returns:
+            图像和对应编码后的标签.
+        """
         img_shape = K.shape(batch_images)
         batch_size = img_shape[0]
 
@@ -197,20 +213,29 @@ class LabelEncoder(object):
 
         return batch_images, labels.stack()
 
-    def _encode_sample(self, image_shape, gt_boxes, cls_ids):
-        """编码每一张图片的标签(包括分类和回归框)."""
+    def _encode_sample(self, image_shape, gt_bboxes, cls_ids):
+        """编码一张图片的标签(包括分类和回归框).
+
+        Args:
+            image_shape: tf.Tensor, 图片的形状.
+            gt_bboxes: tf.Tensor, 该图片对应的真实边界框.
+            cls_ids: tf.Tensor, 该图片对应的原始标签.
+
+        Returns:
+            编码后的标签.
+        """
         cls_ids = K.cast(cls_ids, dtype=tf.float32)
         anchor_boxes = self.anchor_box.generate_anchors(image_shape[1], image_shape[2])  # 此刻的anchor_boxes还没有label.
 
         # 获取anchor分类标签.
-        max_iou_idx, positive_mask, ignore_mask = self._match_anchor_boxes(anchor_boxes, gt_boxes)
+        max_iou_idx, positive_mask, ignore_mask = self._match_anchor_boxes(anchor_boxes, gt_bboxes)
         matched_gt_cls_ids = K.gather(cls_ids, max_iou_idx)  # 匹配出来用于对齐.
         cls_target = tf.where(condition=K.not_equal(positive_mask, 1.0), x=-1.0, y=matched_gt_cls_ids)  # 正例是类ID, 否则-1.
         cls_target = tf.where(condition=K.equal(ignore_mask, 1.0), x=-2.0, y=cls_target)  # 正例是类ID, 否则-2.
         cls_target = K.expand_dims(cls_target, axis=-1)
 
         # 获取anchor回归框.
-        matched_gt_boxes = K.gather(gt_boxes, max_iou_idx)
+        matched_gt_boxes = K.gather(gt_bboxes, max_iou_idx)
         box_target = self._compute_box_target(anchor_boxes, matched_gt_boxes)
 
         label = K.concatenate([cls_target, box_target], axis=-1)
@@ -218,10 +243,24 @@ class LabelEncoder(object):
         return label
 
     @staticmethod
-    def _match_anchor_boxes(anchor_boxes, gt_boxes, match_iou=0.5, ignore_iou=0.4):
-        """基于交并比将锚框和真实框匹配."""
+    def _match_anchor_boxes(anchor_boxes, gt_bboxes, match_iou=0.5, ignore_iou=0.4):
+        """基于交并比将锚框和真实框匹配.
+
+        Args:
+            anchor_boxes: RetinaNet.preprocessing.label_ops.AnchorBox,
+                锚框.
+            gt_bboxes: tf.Tensor,
+                真实边界框.
+            match_iou: float, default=0.5,
+                标记为真实对象IoU阈值.
+            ignore_iou: float, default=0.4,
+                忽略对象IoU阈值.
+
+        Returns:
+            取出最大IoU对应的索引, 正例和忽略部分的标签.
+        """
         # 计算IoU.
-        iou_matrix = faster_compute_iou(anchor_boxes, gt_boxes)
+        iou_matrix = faster_compute_iou(anchor_boxes, gt_bboxes)
         # 取出最大IoU和对应的索引.
         max_iou = K.max(iou_matrix, axis=1)
         max_iou_idx = K.argmax(iou_matrix, axis=1)
@@ -233,15 +272,22 @@ class LabelEncoder(object):
         return max_iou_idx, K.cast(positive_mask, dtype=tf.float32), K.cast(ignore_mask, dtype=tf.float32)
 
     def _compute_box_target(self, anchor_boxes, matched_gt_boxes):
-        """计算框回归变换系数(原理还同Fast R-CNN).
+        """计算框回归变换系数(原理同Fast R-CNN),
+         模型将使用框回归变换系数作为训练数据.
 
-        Notes: 变换系数(进行归一化), 能减少不同尺度的真实损失一致, 但是视觉直观差异大; 梯度也好计算.
+        Args:
+            anchor_boxes: RetinaNet.preprocessing.label_ops.AnchorBox,
+                锚框.
+            matched_gt_boxes: tf.Tensor, 匹配真实边界框.
+
+        Returns:
+            框回归变换系数.
+
+        Notes: 变换系数(进行归一化), 能减少不同尺度的真实损失一致但是视觉直观差异大的情况; 更加容易梯度计算.
         """
         box_target = K.concatenate(
-            [
-                (matched_gt_boxes[..., :2] - anchor_boxes[..., :2]) / anchor_boxes[..., 2:],  # (gt_x - ac_x, gt_y - ac_y).
-                tf.math.log(matched_gt_boxes[..., 2:] / anchor_boxes[..., 2:]),  # 显著缩放差异.
-            ],
+            [(matched_gt_boxes[..., :2] - anchor_boxes[..., :2]) / anchor_boxes[..., 2:],  # (gt_x - ac_x, gt_y - ac_y).
+             tf.math.log(matched_gt_boxes[..., 2:] / anchor_boxes[..., 2:])],  # 显著缩放差异.
             axis=-1,
         )
 
