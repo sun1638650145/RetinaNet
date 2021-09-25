@@ -4,10 +4,17 @@ import tensorflow.keras.backend as K
 
 
 def swap_xy(bboxes):
-    """TensorFlow Datasets的BBox的格式是[ymin, xmin, ymax, xmax],
-    先将格式转换为PASCAL VOC的[xmin, ymin, xmax, ymax].
+    """交换x坐标和y坐标(TensorFlow Datasets的BBox的编码格式是[ymin, xmin, ymax, xmax]).
+
+    Args:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[ymin, xmin, ymax, xmax]的边界框.
+
+    Return:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[xmin, ymin, xmax, ymax]的边界框.
     """
-    ymin = bboxes[..., 0]  # ...轻松应对1/2/3D.
+    ymin = bboxes[..., 0]  # `...`比起`:`可以更轻松的处理1/2/3D张量.
     xmin = bboxes[..., 1]
     ymax = bboxes[..., 2]
     xmax = bboxes[..., 3]
@@ -16,8 +23,15 @@ def swap_xy(bboxes):
 
 
 def xyxy_convert_xywh(bboxes):
-    """将PASCAL VOC的[xmin, ymin, xmax, ymax]转换为
-    coco2017的[x, y, width, height].
+    """转换边界框编码.
+
+    Args:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[xmin, ymin, xmax, ymax]的边界框.
+
+    Return:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[x, y, width, height]的边界框.
     """
     x = (bboxes[..., 0] + bboxes[..., 2]) / 2.  # x = (xmin + xmax) / 2
     y = (bboxes[..., 1] + bboxes[..., 3]) / 2.  # y = (ymin + ymax) / 2
@@ -28,8 +42,15 @@ def xyxy_convert_xywh(bboxes):
 
 
 def xywh_convert_xyxy(bboxes):
-    """将coco2017的[x, y, width, height]转换为
-    PASCAL VOC的[xmin, ymin, xmax, ymax].
+    """转换边界框编码.
+
+    Args:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[x, y, width, height]的边界框.
+
+    Return:
+        bboxes: tf.Tensor or array-like,
+            编码格式是[xmin, ymin, xmax, ymax]的边界框.
     """
     xmin = bboxes[..., 0] - bboxes[..., 2] / 2.  # xmin = x - width / 2
     xmax = bboxes[..., 0] + bboxes[..., 2] / 2.  # xmax = x + width / 2
@@ -40,7 +61,16 @@ def xywh_convert_xyxy(bboxes):
 
 
 def int2str(labels, decoding_dict):
-    """转换整数标签为类名."""
+    """转换整数标签为对应的类名.
+
+    Args:
+        labels: array-like, 整数标签.
+        decoding_dict: ClassLabel.int2str,
+            解码字典(包含整数和类名的映射关系).
+
+    Return:
+        类名组成的列表.
+    """
     if len(labels) == 1:
         return decoding_dict(labels)
     else:
@@ -52,7 +82,15 @@ def int2str(labels, decoding_dict):
 
 
 def visualize_detections(image, bboxes, labels, scores=None):
-    """可视化检测框."""
+    """可视化检测出的目标.
+
+    Args:
+        image: array-like, 检测的图像.
+        bboxes: tf.Tensor or array-like, 检测出的目标的边界框.
+        labels: list, 检测出的目标类名组成的列表.
+        scores: numpy.ndarray, default=None,
+            检测出的目标的预测概率, 如果值的`None`, 则默认预测概率是100%.
+    """
     axes = plt.subplot()
     axes.axis('off')
 
@@ -66,6 +104,7 @@ def visualize_detections(image, bboxes, labels, scores=None):
     if scores is None:
         scores = np.ones(len(labels), dtype=np.float32)
 
+    print(type(bboxes), type(labels), type(scores))
     for bbox, label, score in zip(bboxes, labels, scores):
         x, y, w, h = bbox
         # 获得xmin, ymin.
@@ -79,7 +118,6 @@ def visualize_detections(image, bboxes, labels, scores=None):
         # 绘制锚框.
         patch = plt.Rectangle((xmin, ymin), width=w, height=h, fill=False, linewidth=1, color='blue')
         axes.add_patch(patch)
-
         # 显示标签.
         text = '{}: {:.0f}%'.format(label, score * 100)
         plt.scatter(xmin, ymin)
