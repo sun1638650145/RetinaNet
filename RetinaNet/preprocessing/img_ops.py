@@ -41,7 +41,7 @@ def resize_and_pad_image(image, jitter=(640, 1024), min_side=800.0, max_side=133
         max_side: float, default=1333.0,
             调整后图像较短边长的最大长度.
         stride: float, default=128.0,
-            特征金字塔最小特征图的步长.
+            特征金字塔最小特征图的步长, 此处步长列表[8, 16, 32, 64, 128].
 
     Returns:
         填充后的图像, 图像的形状以及缩放倍率.

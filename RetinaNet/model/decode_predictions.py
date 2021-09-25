@@ -12,7 +12,7 @@ class DecodePredictions(layers.Layer):
         anchor_box: RetinaNet.preprocessing.label_ops.AnchorBox,
             锚框.
         box_variance: tf.Tensor,
-            框方差(使用框方差有利于加速收敛).
+            框方差, 用来增大损失(小于1), 便于计算梯度.
         max_detections_per_class: int, default=100,
             每类目标出现的最大数量.
         max_detections: int, default=100,

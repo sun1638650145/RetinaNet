@@ -5,26 +5,15 @@ import tensorflow.keras.backend as K
 from RetinaNet.utils import xywh_convert_xyxy
 
 
-def compute_iou_(boxes1, boxes2):
-    """一个高效的实现方式, 但是看不懂."""
-    boxes1_corners = xywh_convert_xyxy(boxes1)
-    boxes2_corners = xywh_convert_xyxy(boxes2)
-
-    lu = K.maximum(boxes1_corners[:, None, :2], boxes2_corners[:, :2])
-    rd = K.minimum(boxes1_corners[:, None, 2:], boxes2_corners[:, 2:])
-    intersection = K.maximum(0.0, rd - lu)
-    intersection_area = intersection[:, :, 0] * intersection[:, :, 1]
-    boxes1_area = boxes1[:, 2] * boxes1[:, 3]
-    boxes2_area = boxes2[:, 2] * boxes2[:, 3]
-    union_area = K.maximum(
-        boxes1_area[:, None] + boxes2_area - intersection_area, 1e-8
-    )
-
-    return K.clip(intersection_area / union_area, 0.0, 1.0)
-
-
 def compute_iou(boxes1, boxes2):
-    """计算交并比."""
+    """计算交并比(此计算方式仅作为原理展示, 时间复杂度和空间复杂度都过高, 请不要直接使用).
+
+    Args:
+        boxes1, boxes2: tf.Tensor, 边界框[x, y, width, height].
+
+    Returns:
+        边界框的交并比.
+    """
     boxes1 = xywh_convert_xyxy(boxes1)
     x1min = boxes1[..., 0]
     y1min = boxes1[..., 1]
@@ -62,19 +51,75 @@ def compute_iou(boxes1, boxes2):
     return K.clip(iou, 0.0, 1.0)
 
 
+def faster_compute_iou(boxes1, boxes2):
+    """更快速的计算交并比,
+    同时使用vectorization和矩阵广播优化时间复杂度和空间复杂度.
+
+    Args:
+        boxes1, boxes2: tf.Tensor, 边界框[x, y, width, height].
+
+    Returns:
+        边界框的交并比.
+
+    Thanks:
+        @Srihari Humbarwadi(https://github.com/srihari-humbarwadi)
+    """
+    boxes1_corners = xywh_convert_xyxy(boxes1)
+    boxes2_corners = xywh_convert_xyxy(boxes2)
+
+    # 计算相交部分.
+    left_upper = K.maximum(boxes1_corners[:, None, :2], boxes2_corners[:, :2])  # 取两个边界框[xmin, ymin]的最大值, 相交面最小坐标.
+    right_down = K.minimum(boxes1_corners[:, None, 2:], boxes2_corners[:, 2:])  # 取两个边界框[xmax, ymax]的最小值, 相交面最大坐标.
+    intersection = K.maximum(0.0, right_down - left_upper)  # 坐标之差即为相交面的宽高.
+    intersection_area = intersection[:, :, 0] * intersection[:, :, 1]
+
+    boxes1_area = boxes1[:, 2] * boxes1[:, 3]  # box[x, y, width, height] width * height
+    boxes2_area = boxes2[:, 2] * boxes2[:, 3]
+
+    # 计算并集部分.
+    union_area = K.maximum(
+        boxes1_area[:, None] + boxes2_area - intersection_area, 1e-8
+    )
+
+    return K.clip(intersection_area / union_area, 0.0, 1.0)
+
+
 class AnchorBox(object):
-    """锚框."""
+    """锚框.
+
+    Attributes:
+        aspect_ratios: list, 宽高比.
+        scales: list, 锚框的缩放比.
+        strides: list, 滑动步长, 特征图和输入的图相差的倍数.
+        num_anchors: int, 锚框的数量.
+        areas: list, 锚框的面积.
+        anchor_dims: list, 所有锚框的尺寸(areas * aspect_ratios * scales).
+
+    References:
+        - [Lin, T. Y. , et al., 2017](https://arxiv.org/abs/1708.02002v2)
+    """
     def __init__(self):
-        self.aspect_ratios = [0.5, 1.0, 2.0]  # 宽高比.
+        """初始化锚框."""
+        self.aspect_ratios = [0.5, 1.0, 2.0]
         self.scales = [2 ** x for x in [0, 1/3, 2/3]]
 
-        self.strides = [8, 16, 32, 64, 128]  # 特征图关系和输入的图相差的倍数.
+        self.strides = [8, 16, 32, 64, 128]
         self.num_anchors = len(self.aspect_ratios) * len(self.scales)
         self.areas = [x ** 2 for x in [32.0, 64.0, 128.0, 256.0, 512.0]]
         self.anchor_dims = self._compute_dims()
 
     def generate_anchors(self, image_height, image_width):
-        """为特征金字塔的所有特征图生成锚框."""
+        """为特征金字塔的所有特征图生成锚框.
+
+        Args:
+            image_height: int,
+                输入图像的长度.
+            image_width: int,
+                输入图像的宽度.
+
+        Returns:
+            tf.Tensor, 所有的锚框.
+        """
         anchors = [
             self._generate_anchors(tf.math.ceil(image_height / self.strides[index]),
                                    tf.math.ceil(image_width / self.strides[index]),
@@ -85,7 +130,19 @@ class AnchorBox(object):
         return K.concatenate(anchors, axis=0)
 
     def _generate_anchors(self, feature_height, feature_width, level):
-        """为给定特征图生成锚框."""
+        """为给定等级特征图生成锚框.
+
+        Args:
+            feature_height: int,
+                输入特征图的长度.
+            feature_width: int,
+                输入特征图的宽度.
+            level: int,
+                特征图的等级.
+
+        Returns:
+            tf.Tensor, 给定等级特征图所有的锚框.
+        """
         # 遍历特征图生成锚框x坐标点和y坐标点(+0.5成为中心点).
         x = tf.range(feature_width, dtype=tf.float32) + 0.5
         y = tf.range(feature_height, dtype=tf.float32) + 0.5
@@ -98,7 +155,7 @@ class AnchorBox(object):
         dims = self.anchor_dims[level - 3]
         # 扩充到特征层的数量.
         dims = tf.tile(dims, [feature_height, feature_width, 1, 1])
-        # 合并中心点和宽高(x, y, w, h).
+        # 合并中心点和宽高(x, y, width, height).
         anchors = K.concatenate([centers, dims], axis=-1)
 
         return K.reshape(anchors, [feature_height * feature_width * self.num_anchors, 4])  # 展平.
@@ -109,10 +166,10 @@ class AnchorBox(object):
         for area in self.areas:  # 不同的面积(对应在不同的特征图上).
             anchor_dims = list()
             for ratio in self.aspect_ratios:  # 不同宽高比.
-                # ratio = w / h; h * w = h * h * ratio = area.
+                # ratio = width / height; height * width = height ^ 2 * ratio = area.
                 anchor_height = tf.math.sqrt(area / ratio)
                 anchor_width = area / anchor_height
-                dims = K.reshape(K.stack([anchor_width, anchor_height], axis=-1), [1, 1, 2])  # [1, 1]为宽高数量占位.
+                dims = K.reshape(K.stack([anchor_width, anchor_height], axis=-1), [1, 1, 2])  # [1, 1]为宽高数占位.
                 for scale in self.scales:  # 不同的缩放比.
                     anchor_dims.append(dims * scale)
             anchor_dims_all.append(K.stack(anchor_dims, axis=-2))
@@ -164,7 +221,7 @@ class LabelEncoder(object):
     def _match_anchor_boxes(anchor_boxes, gt_boxes, match_iou=0.5, ignore_iou=0.4):
         """基于交并比将锚框和真实框匹配."""
         # 计算IoU.
-        iou_matrix = compute_iou_(anchor_boxes, gt_boxes)
+        iou_matrix = faster_compute_iou(anchor_boxes, gt_boxes)
         # 取出最大IoU和对应的索引.
         max_iou = K.max(iou_matrix, axis=1)
         max_iou_idx = K.argmax(iou_matrix, axis=1)

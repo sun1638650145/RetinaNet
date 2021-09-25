@@ -104,7 +104,6 @@ def visualize_detections(image, bboxes, labels, scores=None):
     if scores is None:
         scores = np.ones(len(labels), dtype=np.float32)
 
-    print(type(bboxes), type(labels), type(scores))
     for bbox, label, score in zip(bboxes, labels, scores):
         x, y, w, h = bbox
         # 获得xmin, ymin.
