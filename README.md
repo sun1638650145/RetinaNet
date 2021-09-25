@@ -41,11 +41,10 @@ model.fit(x=train_dataset.take(100),
 
 ```python
 import tensorflow as tf
-import tensorflow_datasets as tfds
 from tensorflow.keras.applications.resnet import preprocess_input
 
 from RetinaNet import create_inference_model
-from RetinaNet.preprocessing import resize_and_pad_image
+from RetinaNet.preprocessing import load_dataset, resize_and_pad_image
 from RetinaNet.utils import *
 
 
@@ -58,12 +57,13 @@ def prepare_image(image):
 
 
 # 创建模型.
-model = create_inference_model(weights_dir='./weights/', num_classes=80)
+model = create_inference_model(weights_dir='./checkpoint/', num_classes=80)
 # 加载数据集.
-val_dataset, dataset_info = tfds.load(name='coco/2017',
-                                      split='validation',
-                                      data_dir='./dataset/',
-                                      with_info=True)
+val_dataset, dataset_info = load_dataset(name='coco/2017',
+                                         dataset_dir='./dataset/',
+                                         batch_size=2,
+                                         split='validation',
+                                         without_preprocessing=True)
 
 decoder = dataset_info.features['objects']['label'].int2str
 sample = list(val_dataset.take(2).as_numpy_iterator())[0]
